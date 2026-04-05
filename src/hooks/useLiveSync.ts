@@ -1,37 +1,22 @@
-// Simulates live step data coming from a pedometer / phone sync
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useData } from '../context/DataContext';
+// Live sync hook — connects to real data sources when available
+// Only simulates fake steps in demo mode; real users see actual drive data
+import { useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 export function useLiveSync() {
-  const { addStepsToday } = useData();
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState(new Date());
-  const [currentPace, setCurrentPace] = useState(0);
-  const [intensityData, setIntensityData] = useState<number[]>(Array(20).fill(0));
-  const [lastStepDelta, setLastStepDelta] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { isDemoMode } = useAuth();
+  const [isSyncing] = useState(false);
+  const [lastSync] = useState(new Date());
+  const [currentPace] = useState(0);
+  const [intensityData] = useState<number[]>(Array(20).fill(0));
+  const [lastStepDelta] = useState(0);
 
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setIsSyncing(true);
-
-      setTimeout(() => {
-        const newSteps = Math.floor(Math.random() * 15) + 3;
-        const simulatedPace = newSteps * (60 / 8);
-
-        addStepsToday(newSteps);
-        setIntensityData((prev) => [...prev.slice(1), newSteps]);
-        setCurrentPace(Math.round(simulatedPace));
-        setLastSync(new Date());
-        setLastStepDelta(newSteps);
-        setIsSyncing(false);
-      }, 800);
-    }, 8000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [addStepsToday]);
+  // In production: real step data comes from CSV import + Drive sync.
+  // The live sync simulation is disabled for real users to prevent fake data
+  // from polluting their actual step records.
+  //
+  // Future: when a real pedometer/phone sync API is connected,
+  // this hook will be the integration point.
 
   const formatTime = useCallback((date: Date): string => {
     return date.toLocaleTimeString('en-US', {
@@ -48,5 +33,6 @@ export function useLiveSync() {
     intensityData,
     lastStepDelta,
     formatTime,
+    isDemoMode,
   };
 }

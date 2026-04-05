@@ -47,11 +47,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     settings: null,
   });
 
+  // Track if Drive files have been initialized (to avoid race conditions)
+  const driveInitialized = useRef(false);
+
   const useDrive = isGoogleConfigured() && isSignedIn && !isDemoMode;
 
   // Load data on sign-in
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn) {
+      // Reset state on sign-out
+      driveInitialized.current = false;
+      fileIds.current = { steps: null, trips: null, settings: null };
+      return;
+    }
 
     if (isDemoMode) {
       loadDemoData();
@@ -66,14 +74,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setSyncStatus('syncing');
 
     try {
-      // Generate fresh demo step & trip data
       const demoSteps = generateDemoSteps();
       const demoTrips = generateDemoTrips();
 
       setStepsData(demoSteps);
       setTripsData(demoTrips);
 
-      // Try to load persisted settings from cache (even in demo mode)
       const cachedSettings = await cache.getCachedSettings();
       if (cachedSettings) {
         setSettings(cachedSettings.data);
@@ -91,6 +97,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /** Ensure Drive files exist and fileIds are populated */
+  async function ensureDriveFiles(): Promise<void> {
+    if (!useDrive || driveInitialized.current) return;
+
+    try {
+      const [stepsResult, tripsResult, settingsResult] = await Promise.all([
+        drive.readSteps(),
+        drive.readTrips(),
+        drive.readSettings(),
+      ]);
+
+      fileIds.current.steps = stepsResult.id;
+      fileIds.current.trips = tripsResult.id;
+      fileIds.current.settings = settingsResult.id;
+      driveInitialized.current = true;
+
+      console.log('[Stepsy] Drive files initialized:', {
+        steps: stepsResult.id,
+        trips: tripsResult.id,
+        settings: settingsResult.id,
+      });
+    } catch (err) {
+      console.error('[Stepsy] Failed to initialize Drive files:', err);
+      throw err;
+    }
+  }
+
   /** Load real data from IndexedDB cache + Google Drive */
   const loadData = async () => {
     setIsLoading(true);
@@ -102,22 +135,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const cachedSettings = await cache.getCachedSettings();
       const cachedTrips = await cache.getCachedTrips();
 
-      if (cachedSteps && cache.isCacheFresh(cachedSteps)) {
+      if (cachedSteps) {
         setStepsData(cachedSteps.data);
-        fileIds.current.steps = cachedSteps.driveFileId;
+        if (cachedSteps.driveFileId) fileIds.current.steps = cachedSteps.driveFileId;
       }
-      if (cachedSettings && cache.isCacheFresh(cachedSettings)) {
+      if (cachedSettings) {
         setSettings(cachedSettings.data);
-        fileIds.current.settings = cachedSettings.driveFileId;
+        if (cachedSettings.driveFileId) fileIds.current.settings = cachedSettings.driveFileId;
       }
-      if (cachedTrips && cache.isCacheFresh(cachedTrips)) {
+      if (cachedTrips) {
         setTripsData(cachedTrips.data);
-        fileIds.current.trips = cachedTrips.driveFileId;
+        if (cachedTrips.driveFileId) fileIds.current.trips = cachedTrips.driveFileId;
       }
 
       // 2. Fetch from Google Drive if connected (background sync)
       if (useDrive) {
         try {
+          await ensureDriveFiles();
+
+          // Now read the actual data
           const [stepsResult, tripsResult, settingsResult] = await Promise.all([
             drive.readSteps(),
             drive.readTrips(),
@@ -141,16 +177,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
           setLastSynced(new Date());
           setSyncStatus('synced');
+          console.log('[Stepsy] Drive sync complete. Steps records:', stepsResult.data.records.length);
         } catch (err) {
-          console.error('Drive sync failed:', err);
+          console.error('[Stepsy] Drive sync failed:', err);
           setSyncStatus('error');
+          // Still use cached data if Drive fails
         }
       } else {
-        // No Drive — just use cache
         setSyncStatus('synced');
       }
     } catch (err) {
-      console.error('Load data failed:', err);
+      console.error('[Stepsy] Load data failed:', err);
       setSyncStatus('error');
     } finally {
       setIsLoading(false);
@@ -177,18 +214,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         };
 
         setStepsData(merged);
-        await cache.setCachedSteps(merged, fileIds.current.steps);
 
         // Write to Drive if connected
-        if (useDrive && fileIds.current.steps) {
-          await drive.writeSteps(fileIds.current.steps, merged);
+        if (useDrive) {
+          // Ensure Drive files are initialized before writing
+          if (!fileIds.current.steps) {
+            console.log('[Stepsy] Drive file IDs not ready, initializing...');
+            await ensureDriveFiles();
+          }
+
+          if (fileIds.current.steps) {
+            console.log('[Stepsy] Writing', merged.records.length, 'records to Drive file:', fileIds.current.steps);
+            await drive.writeSteps(fileIds.current.steps, merged);
+            console.log('[Stepsy] Drive write successful');
+          } else {
+            console.warn('[Stepsy] Could not write to Drive: file ID still null after init');
+          }
         }
+
+        // Always update cache (works offline too)
+        await cache.setCachedSteps(merged, fileIds.current.steps);
 
         setLastSynced(new Date());
         setSyncStatus('synced');
         return records.length;
       } catch (err) {
-        console.error('Import failed:', err);
+        console.error('[Stepsy] Import failed:', err);
         setSyncStatus('error');
         throw err;
       } finally {
@@ -207,8 +258,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await cache.setCachedSettings(updated, fileIds.current.settings);
 
       // Also write to Drive if connected
-      if (useDrive && fileIds.current.settings) {
-        await drive.writeSettings(fileIds.current.settings, updated);
+      if (useDrive) {
+        if (!fileIds.current.settings) {
+          await ensureDriveFiles();
+        }
+        if (fileIds.current.settings) {
+          await drive.writeSettings(fileIds.current.settings, updated);
+        }
       }
     },
     [settings, useDrive]
@@ -240,6 +296,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await loadDemoData();
       return;
     }
+    driveInitialized.current = false; // Force re-fetch
     await loadData();
   }, [isDemoMode, useDrive]);
 

@@ -3,7 +3,7 @@
 import { GOOGLE_CLIENT_ID, GOOGLE_API_KEY, SCOPES } from '../config/google';
 import type { UserProfile } from '../types';
 
-// Session storage keys for persistence across page refreshes
+// localStorage keys for persistence across tabs AND page refreshes
 const SESSION_TOKEN_KEY = 'stepsy_access_token';
 const SESSION_USER_KEY = 'stepsy_user_profile';
 const SESSION_EXPIRY_KEY = 'stepsy_token_expiry';
@@ -55,26 +55,26 @@ let tokenClient: any = null;
 let accessToken: string | null = null;
 let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 
-// ---- Session Persistence Helpers ----
+// ---- Session Persistence Helpers (localStorage for cross-tab support) ----
 
 function saveSession(token: string, user: UserProfile, expiresIn?: number): void {
   try {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
-    sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
     if (expiresIn) {
       const expiryTime = Date.now() + expiresIn * 1000;
-      sessionStorage.setItem(SESSION_EXPIRY_KEY, String(expiryTime));
+      localStorage.setItem(SESSION_EXPIRY_KEY, String(expiryTime));
     }
   } catch {
-    // sessionStorage might be blocked in some browsers
+    // localStorage might be blocked in some browsers (incognito, etc.)
   }
 }
 
 function loadSession(): { token: string; user: UserProfile } | null {
   try {
-    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-    const userJson = sessionStorage.getItem(SESSION_USER_KEY);
-    const expiryStr = sessionStorage.getItem(SESSION_EXPIRY_KEY);
+    const token = localStorage.getItem(SESSION_TOKEN_KEY);
+    const userJson = localStorage.getItem(SESSION_USER_KEY);
+    const expiryStr = localStorage.getItem(SESSION_EXPIRY_KEY);
 
     if (!token || !userJson) return null;
 
@@ -96,25 +96,12 @@ function loadSession(): { token: string; user: UserProfile } | null {
 
 function clearSession(): void {
   try {
-    sessionStorage.removeItem(SESSION_TOKEN_KEY);
-    sessionStorage.removeItem(SESSION_USER_KEY);
-    sessionStorage.removeItem(SESSION_EXPIRY_KEY);
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    localStorage.removeItem(SESSION_USER_KEY);
+    localStorage.removeItem(SESSION_EXPIRY_KEY);
   } catch {
     // ignore
   }
-}
-
-// Parse a JWT ID token to get user info
-function parseJwt(token: string): Record<string, string> {
-  const base64Url = token.split('.')[1];
-  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-  const jsonPayload = decodeURIComponent(
-    atob(base64)
-      .split('')
-      .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-      .join('')
-  );
-  return JSON.parse(jsonPayload);
 }
 
 // Wait for the Google Identity Services script to load
@@ -130,7 +117,6 @@ function waitForGis(): Promise<void> {
         resolve();
       }
     }, 100);
-    // Timeout after 10s
     setTimeout(() => {
       clearInterval(interval);
       resolve();
@@ -192,7 +178,7 @@ async function fetchUserProfile(token: string): Promise<UserProfile> {
   };
 }
 
-/** Try to restore a session from sessionStorage (no popup, instant) */
+/** Try to restore a session from localStorage (no popup, instant, works across tabs) */
 export async function restoreSession(): Promise<{ user: UserProfile; token: string } | null> {
   const session = loadSession();
   if (!session) return null;
@@ -245,7 +231,7 @@ export async function signIn(): Promise<{ user: UserProfile; token: string }> {
         try {
           const user = await fetchUserProfile(accessToken);
 
-          // Save session for persistence
+          // Save session for persistence across tabs and refreshes
           saveSession(accessToken, user, response.expires_in);
 
           resolve({ user, token: accessToken });
@@ -267,7 +253,7 @@ export async function signIn(): Promise<{ user: UserProfile; token: string }> {
 }
 
 export async function silentSignIn(): Promise<{ user: UserProfile; token: string } | null> {
-  // First try to restore from session storage (instant, no popup)
+  // First try to restore from localStorage (instant, no popup, works across tabs)
   const restored = await restoreSession();
   if (restored) return restored;
 
