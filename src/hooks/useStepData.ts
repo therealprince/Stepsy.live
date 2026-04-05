@@ -3,11 +3,23 @@ import { useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import type { WeeklyBarData } from '../types';
 
+/**
+ * Format a Date to YYYY-MM-DD in LOCAL time.
+ * This is critical: CSV timestamps may be midnight in a non-UTC timezone
+ * (e.g. IST), so toISOString().split('T')[0] would give the wrong date.
+ */
+function toLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function useStepData() {
   const { stepsData, settings } = useData();
   const goal = settings.dailyGoal;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDate(new Date());
 
   const todaySteps = useMemo(() => {
     const rec = stepsData.records.find((r) => r.date === today);
@@ -20,7 +32,7 @@ export function useStepData() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toLocalDate(d);
       const rec = stepsData.records.find((r) => r.date === dateStr);
       days.push({
         day: d.toLocaleDateString('en-US', { weekday: 'short' }),

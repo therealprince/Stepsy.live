@@ -3,6 +3,13 @@ import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2 } from 'luc
 import { useData } from '../../context/DataContext';
 import type { StepRecord } from '../../types';
 
+function toLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function parseCSV(text: string): StepRecord[] {
   const records: StepRecord[] = [];
   const lines = text.trim().split(/\r?\n/);
@@ -18,7 +25,7 @@ function parseCSV(text: string): StepRecord[] {
     if (isNaN(timestamp) || isNaN(steps)) continue;
 
     const date = new Date(timestamp);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toLocalDate(date);
     records.push({ date: dateStr, steps });
   }
 

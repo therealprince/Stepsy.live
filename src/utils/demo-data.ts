@@ -5,6 +5,13 @@ function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function toLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /** Generate 30 days of realistic step records */
 export function generateDemoSteps(): StepsData {
   const records: StepRecord[] = [];
@@ -13,7 +20,7 @@ export function generateDemoSteps(): StepsData {
   for (let i = 29; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toLocalDate(date);
 
     // Weekday vs weekend pattern
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;

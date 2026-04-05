@@ -292,7 +292,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const addStepsToday = useCallback(
     (steps: number) => {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       setStepsData((prev) => {
         const records = [...prev.records];
         const idx = records.findIndex((r) => r.date === today);
