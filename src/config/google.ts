@@ -1,11 +1,14 @@
 // Google API configuration
-// To set up: create a project at https://console.cloud.google.com
-// Enable: Google Drive API, Google Picker API
-// Create OAuth 2.0 Client ID (Web application)
-// Add authorized origins: http://localhost:5173 and your production URL
+// Developer-provided defaults — always available in production builds.
+// Env vars (VITE_GOOGLE_CLIENT_ID / VITE_GOOGLE_API_KEY) override these for local dev.
+// These are safe to expose in client-side code: they are restricted by authorized JS origins
+// in the Google Cloud Console (localhost + Vercel deploy URLs).
 
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-export const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
+const DEV_CLIENT_ID = '998195642131-faff4is6nbmq9kp7buqvvpfimkdjtt06.apps.googleusercontent.com';
+const DEV_API_KEY = 'AIzaSyCO8B3eIVcbpWKswWjr8RMvLlP0W6aIKaQ';
+
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || DEV_CLIENT_ID;
+export const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || DEV_API_KEY;
 
 export const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
