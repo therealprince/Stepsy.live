@@ -59,6 +59,70 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const useDrive = isGoogleConfigured() && isSignedIn && !isDemoMode;
 
+  const POLL_INTERVAL_MS = 60_000; // poll every 1 minute
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSyncingRef = useRef(false); // guard against overlapping syncs
+
+  /** Fetch latest data from Drive and update state + cache */
+  const syncFromDrive = useCallback(async () => {
+    if (!useDrive || isLoading || isSyncingRef.current) return;
+    isSyncingRef.current = true;
+
+    console.log('[Stepsy] Auto-syncing from Google Drive...');
+    setSyncStatus('syncing');
+
+    try {
+      await ensureDriveFiles();
+
+      const [stepsResult, tripsResult, settingsResult] = await Promise.all([
+        drive.readSteps(),
+        drive.readTrips(),
+        drive.readSettings(),
+      ]);
+
+      setStepsData(stepsResult.data);
+      setTripsData(tripsResult.data);
+      setSettings(settingsResult.data);
+
+      fileIds.current.steps = stepsResult.id;
+      fileIds.current.trips = tripsResult.id;
+      fileIds.current.settings = settingsResult.id;
+
+      await Promise.all([
+        cache.setCachedSteps(stepsResult.data, stepsResult.id, userId),
+        cache.setCachedTrips(tripsResult.data, tripsResult.id, userId),
+        cache.setCachedSettings(settingsResult.data, settingsResult.id, userId),
+      ]);
+
+      setLastSynced(new Date());
+      setSyncStatus('synced');
+      console.log('[Stepsy] Auto-sync complete. Steps records:', stepsResult.data.records.length);
+    } catch (err) {
+      console.error('[Stepsy] Auto-sync failed:', err);
+      setSyncStatus('error');
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [useDrive, isLoading, userId]);
+
+  /** Start the 1-minute polling interval (only when tab is active) */
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return; // already running
+    console.log('[Stepsy] Polling started (every 1 min)');
+    pollIntervalRef.current = setInterval(() => {
+      syncFromDrive();
+    }, POLL_INTERVAL_MS);
+  }, [syncFromDrive]);
+
+  /** Stop polling (when tab goes hidden) */
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+      console.log('[Stepsy] Polling paused (tab hidden)');
+    }
+  }, []);
+
   // Load data on sign-in
   useEffect(() => {
     if (!isSignedIn) {
@@ -68,6 +132,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setStepsData(EMPTY_STEPS);
       setTripsData(EMPTY_TRIPS);
       setSettings(INITIAL_SETTINGS);
+      stopPolling();
       return;
     }
 
@@ -77,6 +142,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loadData();
     }
   }, [isSignedIn, isDemoMode, user?.id]);
+
+  // Auto-sync: poll every 1 min ONLY while the tab is active.
+  // When the tab becomes visible again, sync IMMEDIATELY then resume polling.
+  useEffect(() => {
+    if (!useDrive) {
+      stopPolling();
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Tab just became active — sync right away, then start polling
+        console.log('[Stepsy] Tab became active — syncing immediately');
+        syncFromDrive();
+        startPolling();
+      } else {
+        // Tab went hidden — stop wasting API calls
+        stopPolling();
+      }
+    };
+
+    // If tab is already visible when this effect runs, start polling
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopPolling();
+    };
+  }, [useDrive, syncFromDrive, startPolling, stopPolling]);
 
   /** Load demo data — always generate fresh + overlay any cached settings */
   const loadDemoData = async () => {
