@@ -45,7 +45,7 @@ function AppContent() {
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
 
           {/* Mobile Header */}
-          <MobileHeader isSyncing={false} />
+          <MobileHeader />
 
           {/* User avatar (desktop) */}
           <div className="hidden md:block absolute top-6 right-6 lg:top-10 lg:right-10 z-20">

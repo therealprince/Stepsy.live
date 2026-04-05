@@ -1,9 +1,9 @@
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Cloud, HardDrive } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function UserAvatar() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isDemoMode, isConfigured } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,11 +35,32 @@ export default function UserAvatar() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 bg-neutral-900 border border-neutral-800 rounded-xl p-4 min-w-[200px] shadow-2xl z-50 animate-in">
+        <div className="absolute right-0 top-10 bg-neutral-900 border border-neutral-800 rounded-xl p-4 min-w-[220px] shadow-2xl z-50 animate-in">
           <div className="mb-3 pb-3 border-b border-neutral-800">
             <p className="text-sm font-medium text-white">{user.name}</p>
             <p className="text-[10px] text-neutral-500 font-mono mt-0.5">{user.email}</p>
           </div>
+
+          {/* Storage status */}
+          <div className="mb-3 pb-3 border-b border-neutral-800 flex items-center gap-2">
+            {isDemoMode ? (
+              <>
+                <HardDrive size={12} className="text-amber-400" />
+                <span className="text-[10px] font-mono text-neutral-400">Demo Mode — Local only</span>
+              </>
+            ) : isConfigured ? (
+              <>
+                <Cloud size={12} className="text-emerald-400" />
+                <span className="text-[10px] font-mono text-neutral-400">Google Drive synced</span>
+              </>
+            ) : (
+              <>
+                <HardDrive size={12} className="text-neutral-500" />
+                <span className="text-[10px] font-mono text-neutral-400">Local storage only</span>
+              </>
+            )}
+          </div>
+
           <button
             onClick={() => {
               signOut();

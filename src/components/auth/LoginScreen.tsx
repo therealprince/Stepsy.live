@@ -1,4 +1,4 @@
-import { Footprints, ArrowRight } from 'lucide-react';
+import { Footprints, ArrowRight, Shield, Globe } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen() {
@@ -31,17 +31,21 @@ export default function LoginScreen() {
         <h1 className="text-4xl font-light tracking-tight text-white mb-2">
           stepsy<span className="text-emerald-400 font-bold">.live</span>
         </h1>
-        <p className="text-neutral-500 text-sm mb-12 leading-relaxed">
+        <p className="text-neutral-500 text-sm mb-10 leading-relaxed">
           Zero-cost step tracking dashboard.
           <br />
           Your data lives in <span className="text-neutral-300">your</span> Google Drive.
         </p>
 
-        {/* Sign in button */}
+        {/* Sign in with Google — always visible */}
         <button
           onClick={signIn}
           disabled={isLoading}
-          className="w-full py-3.5 px-6 rounded-xl bg-white hover:bg-neutral-100 text-black font-semibold text-sm transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed mb-3 shadow-[0_0_30px_rgba(255,255,255,0.1)]"
+          className={`w-full py-3.5 px-6 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed mb-3 ${
+            isConfigured
+              ? 'bg-white hover:bg-neutral-100 text-black shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+              : 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300'
+          }`}
         >
           <svg width="18" height="18" viewBox="0 0 24 24">
             <path
@@ -78,14 +82,27 @@ export default function LoginScreen() {
           </p>
         )}
 
-        {!isConfigured && (
-          <p className="mt-4 text-[10px] text-neutral-600 font-mono">
-            Google API not configured — demo mode only
-          </p>
+        {/* Status message based on API configuration */}
+        {!isConfigured ? (
+          <div className="mt-6 space-y-3">
+            <div className="flex items-center justify-center gap-2 text-[10px] text-amber-400/70 font-mono">
+              <Shield size={12} />
+              Google API not configured — using demo mode
+            </div>
+            <p className="text-[10px] text-neutral-700 leading-relaxed">
+              Developer: add <code className="text-neutral-500">VITE_GOOGLE_CLIENT_ID</code> and{' '}
+              <code className="text-neutral-500">VITE_GOOGLE_API_KEY</code> to <code className="text-neutral-500">.env</code> to enable Google Sign-In.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-6 flex items-center justify-center gap-2 text-[10px] text-emerald-400/70 font-mono">
+            <Globe size={12} />
+            Google Drive API connected — ready
+          </div>
         )}
 
         {/* Privacy note */}
-        <div className="mt-12 space-y-2">
+        <div className="mt-10 space-y-2">
           <p className="text-[10px] text-neutral-600 leading-relaxed">
             We never store your data on our servers.
             <br />

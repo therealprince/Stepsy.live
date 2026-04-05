@@ -5,6 +5,7 @@ import * as drive from '../services/drive';
 import * as cache from '../db/local-cache';
 import type { StepsData, TripsData, AppSettings, StepRecord } from '../types';
 import { DEFAULT_SETTINGS } from '../config/google';
+import { generateDemoSteps, generateDemoTrips } from '../utils/demo-data';
 
 interface DataState {
   stepsData: StepsData;
@@ -27,13 +28,13 @@ const DataContext = createContext<DataState | null>(null);
 
 const EMPTY_STEPS: StepsData = { version: 1, records: [] };
 const EMPTY_TRIPS: TripsData = { version: 1, trips: [] };
-const EMPTY_SETTINGS: AppSettings = { ...DEFAULT_SETTINGS } as AppSettings;
+const INITIAL_SETTINGS: AppSettings = { ...DEFAULT_SETTINGS } as AppSettings;
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isDemoMode } = useAuth();
   const [stepsData, setStepsData] = useState<StepsData>(EMPTY_STEPS);
   const [tripsData, setTripsData] = useState<TripsData>(EMPTY_TRIPS);
-  const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -46,22 +47,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     settings: null,
   });
 
-  const useDrive = isGoogleConfigured() && isSignedIn;
+  const useDrive = isGoogleConfigured() && isSignedIn && !isDemoMode;
 
   // Load data on sign-in
   useEffect(() => {
     if (!isSignedIn) return;
-    loadData();
-  }, [isSignedIn]);
 
+    if (isDemoMode) {
+      loadDemoData();
+    } else {
+      loadData();
+    }
+  }, [isSignedIn, isDemoMode]);
+
+  /** Load demo data — always generate fresh + overlay any cached settings */
+  const loadDemoData = async () => {
+    setIsLoading(true);
+    setSyncStatus('syncing');
+
+    try {
+      // Generate fresh demo step & trip data
+      const demoSteps = generateDemoSteps();
+      const demoTrips = generateDemoTrips();
+
+      setStepsData(demoSteps);
+      setTripsData(demoTrips);
+
+      // Try to load persisted settings from cache (even in demo mode)
+      const cachedSettings = await cache.getCachedSettings();
+      if (cachedSettings) {
+        setSettings(cachedSettings.data);
+      } else {
+        setSettings(INITIAL_SETTINGS);
+      }
+
+      setLastSynced(new Date());
+      setSyncStatus('synced');
+    } catch (err) {
+      console.error('Demo data load failed:', err);
+      setSyncStatus('error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /** Load real data from IndexedDB cache + Google Drive */
   const loadData = async () => {
     setIsLoading(true);
     setSyncStatus('syncing');
 
     try {
-      // Try cache first
+      // 1. Load from IndexedDB cache first (instant)
       const cachedSteps = await cache.getCachedSteps();
       const cachedSettings = await cache.getCachedSettings();
+      const cachedTrips = await cache.getCachedTrips();
 
       if (cachedSteps && cache.isCacheFresh(cachedSteps)) {
         setStepsData(cachedSteps.data);
@@ -71,8 +110,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setSettings(cachedSettings.data);
         fileIds.current.settings = cachedSettings.driveFileId;
       }
+      if (cachedTrips && cache.isCacheFresh(cachedTrips)) {
+        setTripsData(cachedTrips.data);
+        fileIds.current.trips = cachedTrips.driveFileId;
+      }
 
-      // Fetch from Drive if configured
+      // 2. Fetch from Google Drive if connected (background sync)
       if (useDrive) {
         try {
           const [stepsResult, tripsResult, settingsResult] = await Promise.all([
@@ -103,9 +146,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setSyncStatus('error');
         }
       } else {
-        // Demo mode — load from cache only
-        if (cachedSteps) setStepsData(cachedSteps.data);
-        if (cachedSettings) setSettings(cachedSettings.data);
+        // No Drive — just use cache
         setSyncStatus('synced');
       }
     } catch (err) {
@@ -138,7 +179,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setStepsData(merged);
         await cache.setCachedSteps(merged, fileIds.current.steps);
 
-        // Write to Drive
+        // Write to Drive if connected
         if (useDrive && fileIds.current.steps) {
           await drive.writeSteps(fileIds.current.steps, merged);
         }
@@ -161,8 +202,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (partial: Partial<AppSettings>) => {
       const updated = { ...settings, ...partial };
       setSettings(updated);
+
+      // Always persist to cache — even in demo mode
       await cache.setCachedSettings(updated, fileIds.current.settings);
 
+      // Also write to Drive if connected
       if (useDrive && fileIds.current.settings) {
         await drive.writeSettings(fileIds.current.settings, updated);
       }
@@ -192,9 +236,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshFromDrive = useCallback(async () => {
-    if (!useDrive) return;
+    if (isDemoMode) {
+      await loadDemoData();
+      return;
+    }
     await loadData();
-  }, [useDrive]);
+  }, [isDemoMode, useDrive]);
 
   const clearAllData = useCallback(async () => {
     const empty = { ...EMPTY_STEPS };

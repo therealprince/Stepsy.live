@@ -8,6 +8,7 @@ interface AuthState {
   isSignedIn: boolean;
   isLoading: boolean;
   isConfigured: boolean;
+  isDemoMode: boolean;
   error: string | null;
   signIn: () => Promise<void>;
   signOut: () => void;
@@ -31,16 +32,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const configured = isGoogleConfigured();
 
-  // Try silent sign-in on mount
+  // Auto-sign-in attempt on mount (only if Google API is configured)
   useEffect(() => {
     if (!configured) {
-      // No Google credentials — auto-enter demo mode
-      setUser(DEMO_USER);
-      setIsDemoMode(true);
+      // No Google credentials configured — don't auto-enter demo mode,
+      // just stop loading so the login screen shows.
       setIsLoading(false);
       return;
     }
 
+    // Try silent sign-in with existing token
     silentSignIn()
       .then((result) => {
         if (result) {
@@ -48,13 +49,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => {
-        // Silent sign-in failed — that's fine
+        // Silent sign-in failed — user will need to click button
       })
       .finally(() => setIsLoading(false));
   }, [configured]);
 
   const signIn = useCallback(async () => {
     if (!configured) {
+      // If Google isn't configured, clicking "Sign in" enters demo mode
       setUser(DEMO_USER);
       setIsDemoMode(true);
       return;
@@ -94,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSignedIn: !!user,
         isLoading,
         isConfigured: configured,
+        isDemoMode,
         error,
         signIn,
         signOut,
