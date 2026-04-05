@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { signIn as googleSignIn, signOut as googleSignOut, silentSignIn } from '../services/auth';
+import {
+  signIn as googleSignIn,
+  signOut as googleSignOut,
+  silentSignIn,
+  onSessionChange,
+} from '../services/auth';
 import { isGoogleConfigured } from '../config/google';
 import type { UserProfile } from '../types';
 
@@ -41,17 +46,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Try silent sign-in with existing token
+    // Try silent sign-in with existing token from localStorage
     silentSignIn()
       .then((result) => {
         if (result) {
+          console.log('[Stepsy] Auto-signed in as', result.user.email);
           setUser(result.user);
+          setIsDemoMode(false);
         }
       })
       .catch(() => {
         // Silent sign-in failed — user will need to click button
       })
       .finally(() => setIsLoading(false));
+  }, [configured]);
+
+  // Listen for cross-tab session changes (sign-in/sign-out in another tab)
+  useEffect(() => {
+    if (!configured) return;
+
+    const unsubscribe = onSessionChange((session) => {
+      if (session) {
+        console.log('[Stepsy] Cross-tab sign-in detected for', session.user.email);
+        setUser(session.user);
+        setIsDemoMode(false);
+        setIsLoading(false);
+      } else {
+        console.log('[Stepsy] Cross-tab sign-out detected');
+        setUser(null);
+        setIsDemoMode(false);
+      }
+    });
+
+    return unsubscribe;
   }, [configured]);
 
   const signIn = useCallback(async () => {

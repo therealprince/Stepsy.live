@@ -1,5 +1,8 @@
 // Local IndexedDB cache for offline speed
 // Mirrors Drive data locally so the app feels instant
+//
+// Cache keys are scoped by userId to prevent demo data from leaking
+// into authenticated user views. Demo mode uses unscoped keys ('demo_steps', etc.)
 import { openDB, type IDBPDatabase } from 'idb';
 import type { StepsData, TripsData, AppSettings } from '../types';
 
@@ -29,6 +32,14 @@ function getDB(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
+// ---- Key Scoping ----
+
+/** Build a user-scoped cache key. Demo mode uses 'demo' prefix. */
+function scopedKey(base: string, userId: string | null): string {
+  const scope = userId || 'demo';
+  return `${scope}_${base}`;
+}
+
 // ---- Generic Cache Operations ----
 
 export async function getCached<T>(key: string): Promise<CacheEntry<T> | undefined> {
@@ -46,35 +57,63 @@ export async function setCache<T>(key: string, data: T, driveFileId: string | nu
   });
 }
 
+export async function deleteKey(key: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_NAME, key);
+}
+
 export async function clearCache(): Promise<void> {
   const db = await getDB();
   await db.clear(STORE_NAME);
 }
 
-// ---- Typed Accessors ----
+/**
+ * Clear demo-mode cache entries so they don't leak into authenticated views.
+ */
+export async function clearDemoCache(): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.objectStore(STORE_NAME);
+  const allKeys = await store.getAllKeys();
 
-export async function getCachedSteps(): Promise<CacheEntry<StepsData> | undefined> {
-  return getCached<StepsData>('steps');
+  for (const key of allKeys) {
+    const keyStr = String(key);
+    // Delete old unscoped keys (legacy) and demo-scoped keys
+    if (
+      keyStr === 'steps' || keyStr === 'trips' || keyStr === 'settings' ||
+      keyStr.startsWith('demo_')
+    ) {
+      await store.delete(key);
+    }
+  }
+  await tx.done;
+  console.log('[Stepsy] Demo cache cleared');
 }
 
-export async function setCachedSteps(data: StepsData, driveFileId: string | null): Promise<void> {
-  return setCache('steps', data, driveFileId);
+// ---- Typed Accessors (user-scoped) ----
+
+export async function getCachedSteps(userId: string | null): Promise<CacheEntry<StepsData> | undefined> {
+  return getCached<StepsData>(scopedKey('steps', userId));
 }
 
-export async function getCachedTrips(): Promise<CacheEntry<TripsData> | undefined> {
-  return getCached<TripsData>('trips');
+export async function setCachedSteps(data: StepsData, driveFileId: string | null, userId: string | null): Promise<void> {
+  return setCache(scopedKey('steps', userId), data, driveFileId);
 }
 
-export async function setCachedTrips(data: TripsData, driveFileId: string | null): Promise<void> {
-  return setCache('trips', data, driveFileId);
+export async function getCachedTrips(userId: string | null): Promise<CacheEntry<TripsData> | undefined> {
+  return getCached<TripsData>(scopedKey('trips', userId));
 }
 
-export async function getCachedSettings(): Promise<CacheEntry<AppSettings> | undefined> {
-  return getCached<AppSettings>('settings');
+export async function setCachedTrips(data: TripsData, driveFileId: string | null, userId: string | null): Promise<void> {
+  return setCache(scopedKey('trips', userId), data, driveFileId);
 }
 
-export async function setCachedSettings(data: AppSettings, driveFileId: string | null): Promise<void> {
-  return setCache('settings', data, driveFileId);
+export async function getCachedSettings(userId: string | null): Promise<CacheEntry<AppSettings> | undefined> {
+  return getCached<AppSettings>(scopedKey('settings', userId));
+}
+
+export async function setCachedSettings(data: AppSettings, driveFileId: string | null, userId: string | null): Promise<void> {
+  return setCache(scopedKey('settings', userId), data, driveFileId);
 }
 
 // Check if cache is fresh (less than 5 minutes old)

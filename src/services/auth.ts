@@ -54,6 +54,45 @@ declare global {
 let tokenClient: any = null;
 let accessToken: string | null = null;
 let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+let gapiInitialized = false;
+
+// Callback for cross-tab session changes
+type SessionChangeCallback = (session: { user: UserProfile; token: string } | null) => void;
+let sessionChangeCallback: SessionChangeCallback | null = null;
+
+/**
+ * Register a callback to be notified when the session changes in another tab.
+ * Used by AuthContext to auto-restore sessions.
+ */
+export function onSessionChange(callback: SessionChangeCallback): () => void {
+  sessionChangeCallback = callback;
+
+  // Listen for storage events (fired when another tab changes localStorage)
+  const handler = (event: StorageEvent) => {
+    if (event.key === SESSION_TOKEN_KEY) {
+      if (event.newValue) {
+        // Another tab signed in — restore the session
+        const session = loadSession();
+        if (session) {
+          accessToken = session.token;
+          _syncGapiToken();
+          callback(session);
+        }
+      } else {
+        // Another tab signed out
+        accessToken = null;
+        _syncGapiToken();
+        callback(null);
+      }
+    }
+  };
+
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener('storage', handler);
+    sessionChangeCallback = null;
+  };
+}
 
 // ---- Session Persistence Helpers (localStorage for cross-tab support) ----
 
@@ -65,6 +104,7 @@ function saveSession(token: string, user: UserProfile, expiresIn?: number): void
       const expiryTime = Date.now() + expiresIn * 1000;
       localStorage.setItem(SESSION_EXPIRY_KEY, String(expiryTime));
     }
+    console.log('[Stepsy] Session saved to localStorage for', user.email);
   } catch {
     // localStorage might be blocked in some browsers (incognito, etc.)
   }
@@ -82,6 +122,7 @@ function loadSession(): { token: string; user: UserProfile } | null {
     if (expiryStr) {
       const expiry = parseInt(expiryStr, 10);
       if (Date.now() > expiry) {
+        console.log('[Stepsy] Stored token has expired, clearing session');
         clearSession();
         return null;
       }
@@ -101,6 +142,17 @@ function clearSession(): void {
     localStorage.removeItem(SESSION_EXPIRY_KEY);
   } catch {
     // ignore
+  }
+}
+
+/** Sync the in-memory access token to gapi client */
+function _syncGapiToken(): void {
+  if (window.gapi?.client) {
+    if (accessToken) {
+      window.gapi.client.setToken({ access_token: accessToken });
+    } else {
+      window.gapi.client.setToken(null);
+    }
   }
 }
 
@@ -145,6 +197,12 @@ function waitForGapi(): Promise<void> {
 }
 
 export async function initGapiClient(): Promise<void> {
+  if (gapiInitialized) {
+    // Already initialized, just sync the token
+    _syncGapiToken();
+    return;
+  }
+
   await waitForGapi();
   return new Promise((resolve) => {
     window.gapi!.load('client', async () => {
@@ -152,10 +210,9 @@ export async function initGapiClient(): Promise<void> {
         apiKey: GOOGLE_API_KEY,
         discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
       });
+      gapiInitialized = true;
       // If we have a stored token, set it
-      if (accessToken) {
-        window.gapi!.client.setToken({ access_token: accessToken });
-      }
+      _syncGapiToken();
       resolve();
     });
   });
@@ -189,6 +246,7 @@ export async function restoreSession(): Promise<{ user: UserProfile; token: stri
       headers: { Authorization: `Bearer ${session.token}` },
     });
     if (!resp.ok) {
+      console.log('[Stepsy] Stored token is invalid (status', resp.status, '), clearing');
       clearSession();
       return null;
     }
@@ -196,9 +254,9 @@ export async function restoreSession(): Promise<{ user: UserProfile; token: stri
     accessToken = session.token;
 
     // Initialize gapi with the restored token
-    await waitForGapi();
     await initGapiClient();
 
+    console.log('[Stepsy] Session restored from localStorage for', session.user.email);
     return session;
   } catch {
     clearSession();
@@ -206,6 +264,10 @@ export async function restoreSession(): Promise<{ user: UserProfile; token: stri
   }
 }
 
+/**
+ * Interactive sign-in. Uses prompt: '' to auto-select the previously
+ * authorized Google account. Only shows consent on first-ever sign-in.
+ */
 export async function signIn(): Promise<{ user: UserProfile; token: string }> {
   await waitForGis();
   await initGapiClient();
@@ -225,7 +287,7 @@ export async function signIn(): Promise<{ user: UserProfile; token: string }> {
           return;
         }
         accessToken = response.access_token!;
-        window.gapi!.client.setToken({ access_token: accessToken });
+        _syncGapiToken();
 
         // Fetch user profile
         try {
@@ -248,52 +310,30 @@ export async function signIn(): Promise<{ user: UserProfile; token: string }> {
         reject(new Error(errorMsg));
       },
     });
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+
+    // Use prompt: '' to auto-select previously authorized account.
+    // This avoids forcing re-consent every time. Google will only show
+    // the consent screen if the user hasn't previously authorized these scopes.
+    tokenClient.requestAccessToken({ prompt: '' });
   });
 }
 
 export async function silentSignIn(): Promise<{ user: UserProfile; token: string } | null> {
-  // First try to restore from localStorage (instant, no popup, works across tabs)
+  // Restore from localStorage — instant, no popup, works across tabs
   const restored = await restoreSession();
   if (restored) return restored;
 
-  // Otherwise try GIS silent sign-in (may show popup briefly)
-  await waitForGis();
-  await initGapiClient();
-
-  return new Promise((resolve) => {
-    tokenClient = window.google!.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPES + ' openid profile email',
-      callback: async (response) => {
-        if (response.error) {
-          resolve(null);
-          return;
-        }
-        accessToken = response.access_token!;
-        window.gapi!.client.setToken({ access_token: accessToken });
-
-        try {
-          const user = await fetchUserProfile(accessToken);
-          saveSession(accessToken, user, response.expires_in);
-          resolve({ user, token: accessToken });
-        } catch {
-          resolve(null);
-        }
-      },
-      error_callback: () => {
-        resolve(null);
-      },
-    });
-    tokenClient.requestAccessToken({ prompt: '' });
-  });
+  // If no stored session, we can't do a truly silent sign-in with GIS.
+  // Return null and let the user click the sign-in button.
+  console.log('[Stepsy] No stored session found, user must sign in interactively');
+  return null;
 }
 
 export function signOut(): void {
   if (accessToken) {
     window.google?.accounts.oauth2.revoke(accessToken, () => {
       accessToken = null;
-      window.gapi?.client.setToken(null);
+      _syncGapiToken();
     });
   }
   clearSession();
@@ -309,7 +349,20 @@ export function getAccessToken(): string | null {
 
 export function setAccessToken(token: string): void {
   accessToken = token;
-  if (window.gapi?.client) {
-    window.gapi.client.setToken({ access_token: token });
+  _syncGapiToken();
+}
+
+/**
+ * Returns the current user's ID from localStorage (useful for cache scoping)
+ * without requiring a full session restore.
+ */
+export function getStoredUserId(): string | null {
+  try {
+    const userJson = localStorage.getItem(SESSION_USER_KEY);
+    if (!userJson) return null;
+    const user = JSON.parse(userJson) as UserProfile;
+    return user.id;
+  } catch {
+    return null;
   }
 }

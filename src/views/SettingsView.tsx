@@ -71,6 +71,16 @@ export default function SettingsView() {
             </span>
           </p>
         </div>
+        <div className="mt-2 p-3 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+          <p className="text-[10px] text-neutral-400 leading-relaxed flex items-start gap-2">
+            <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
+            <span>
+              <strong className="text-neutral-300">Where is my data?</strong> Step data, trips, and settings are stored in Google Drive's
+              hidden <em>app data folder</em>. This is a secure, app-private area — it won't appear in your Drive file browser,
+              but it's safely backed up and synced across devices. Only Stepsy can read it.
+            </span>
+          </p>
+        </div>
       </div>
 
       {/* ─── Basic Toggles ─── */}
