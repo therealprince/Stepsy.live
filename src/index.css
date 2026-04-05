@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #262626 transparent;
+  }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background-color: #262626; border-radius: 999px; }
+  *::-webkit-scrollbar-thumb:hover { background-color: #404040; }
+
+  body {
+    @apply bg-black text-neutral-100 font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::selection { @apply bg-emerald-500/30; }
+}
+
+@layer utilities {
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+  .animate-in { animation: fadeIn 0.5s ease-out; }
+}
+
+@keyframes dash { to { stroke-dashoffset: -100; } }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.drop-zone-active {
+  @apply border-emerald-400 bg-emerald-500/5;
+  box-shadow: 0 0 30px rgba(52, 211, 153, 0.15) inset;
+}
+
+/* ─── Leaflet dark theme overrides ─── */
+.leaflet-container {
+  background: #0a0a0a !important;
+  font-family: inherit !important;
+}
+.leaflet-control-attribution {
+  background: rgba(0, 0, 0, 0.4) !important;
+  color: #525252 !important;
+  font-size: 8px !important;
+  backdrop-filter: blur(4px);
+}
+.leaflet-control-attribution a {
+  color: #525252 !important;
+}
+.leaflet-tile-pane {
+  filter: saturate(0.85) brightness(0.95);
+}
+
+/* Pulse animation for map markers */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+}
+
+/* ─── Range slider styling ─── */
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: #262626;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #34d399;
+  cursor: pointer;
+  border: 2px solid #0a0a0a;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.3);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #34d399;
+  cursor: pointer;
+  border: 2px solid #0a0a0a;
+}
